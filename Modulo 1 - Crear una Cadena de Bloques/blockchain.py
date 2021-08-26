@@ -9,7 +9,7 @@ Created on Wed Aug 25 16:07:09 2021
 # Módulo 1 - Crear una Cadena de Bloques
 
 # Para Instalar:
-# Flask==0.12.2: pip install Flask==0.12.2
+# Flask==1.1.2: pip install Flask==1.1.2
 # Cliente HTTP Postman: https://www.getpostman.com/
 
 # Importar las librerías
