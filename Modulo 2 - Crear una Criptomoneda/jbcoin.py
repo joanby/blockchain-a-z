@@ -21,7 +21,7 @@ import json
 from flask import Flask, jsonify, request
 import requests
 from uuid import uuid4
-from urlib.parse import urlparse
+from urllib.parse import urlparse
 
 # Parte 1 - Crear la Cadena de Bloques
 
@@ -31,6 +31,7 @@ class Blockchain:
         self.chain = []
         self.transactions = []
         self.create_block(proof = 1, previous_hash = '0')
+        self.nodes = set()
         
     def create_block(self, proof, previous_hash):
         block = {'index' : len(self.chain)+1,
@@ -83,12 +84,37 @@ class Blockchain:
         previous_block = self.previous_block()
         return previous_block['index'] + 1
     
+    def add_node(self, address):
+        parsed_url = urlparse(address)
+        self.nodes.add(parsed_url.netloc)
+    
+    def replace_chain(self):
+        network = self.nodes
+        longest_chain = None
+        max_length = len(self.chain)
+        for node in network:
+            response = requests.get(f'http://{node}/get_chain')
+            if response.status_code == 200:
+                length = response.json()['length']
+                chain = response.json()['chain']
+                if length > max_length and self.is_chain_valid(chain):
+                    max_length = length
+                    longest_chain = chain
+        if longest_chain: 
+            self.chain = longest_chain
+            return True
+        return False
+                    
 # Parte 2 - Minado de un Bloque de la Cadena
 
 # Crear una aplicación web
 app = Flask(__name__)
 # Si se obtiene un error 500, actualizar flask, reiniciar spyder y ejecutar la siguiente línea
 app.config['JSONIFY_PRETTYPRINT_REGULAR'] = False
+
+# Crear la dirección del nodo en el puerto 5000
+node_address = str(uuid4()).replace('-', '')
+
 
 # Crear una Blockchain
 blockchain = Blockchain()
@@ -100,12 +126,14 @@ def mine_block():
     previous_proof = previous_block['proof']
     proof = blockchain.proof_of_work(previous_proof)
     previous_hash = blockchain.hash(previous_block)
+    blockchain.add_transaction(sender = node_address, receiver = "Juan Gabriel", amount = 10)
     block = blockchain.create_block(proof, previous_hash)
     response = {'message' : '¡Enhorabuena, has minado un nuevo bloque!', 
                 'index': block['index'],
                 'timestamp' : block['timestamp'],
                 'proof' : block['proof'],
-                'previous_hash' : block['previous_hash']}
+                'previous_hash' : block['previous_hash'],
+                'transactions': block['transactions']}
     return jsonify(response), 200
 
 # Obtener la cadena de bloques al completo
@@ -126,8 +154,43 @@ def is_valid():
     return jsonify(response), 200  
 
 
+# Añadir una nueva transacción a la cadena de bloques
+@app.route('/add_transaction', methods = ['POST'])
+def add_transaction():
+    json = request.get_json()
+    transaction_keys = ['sender', 'receiver', 'amount']
+    if not all(key in json for key in transaction_keys):
+        return 'Faltan algunos elementos de la transacción', 400
+    index = blockchain.add_transaction(json['sender'], json['receiver'], json['amount'])
+    response = {'message': f'La transacción será añadida al bloque {index}'}
+    return jsonify(response), 201
+    
 # Parte 3 - Descentralizar la Cadena de Bloques
 
+# Conectar nuevos nodos
+@app.route('/connect_node', methods = ['POST'])
+def connect_node():
+    json = request.get_json()
+    nodes = json.get('nodes')
+    if nodes is None: 
+        return 'No hay nodos para añadir', 400
+    for node in nodes:
+        blockchain.add_node(node)
+    response = {'message' : 'Todos los nodos han sido conectados. La cadena de Jbcoins contiene ahora los nodos siguientes: ',
+                'total_nodes': list(blockchain.nodes)}
+    return jsonify(response), 201
+
+# Reemplazar la cadena por la más larga (si es necesario)
+@app.route('/replace_chain', methods = ['GET'])
+def replace_chain():
+    is_chain_replaced = blockchain.replace_chain()
+    if is_chain_replaced:
+        response = {'message' : 'Los nodos tenían diferentes cadenas, que han sido todas reemplazadas por la más larga.',
+                    'new_chain': blockchain.chain}
+    else:
+        response = {'message' : 'Todo correcto. La cadena en todos los nodos ya es la más larga.',
+                    'actual_chain' : blockchain.chain}
+    return jsonify(response), 200  
 
 
 # Ejecutar la app
